@@ -1,0 +1,416 @@
+---
+title: "Russian_Analysis"
+author: "Elizaveta Volkova"
+date: "11/04/2020"
+output:
+  html_document:
+    df_print: paged
+---
+```{r,message=F}
+library(dplyr)
+library(ggplot2)
+library(forecast)
+library(tseries)
+library(dplyr, quietly = T)
+require(timelineR)
+require(astsa)
+library(tidyr)
+```
+```{r}
+cases<-read.csv("covid19-russia-cases.csv")
+tests<-read.csv("tests_updated.csv")
+```
+
+```{r}
+#head(cases)
+#head(tests)
+#Updated date column to recognizable by R format in tests file
+#tests$Date <- strptime(as.character(tests$Date), "%d.%m.%Y")
+#tests$Date<- format(tests$Date, "%Y-%m-%d")
+
+#Counted change of tests compared to previous day
+tests<-tests%>%mutate(changeFromPrevious = Tests - lag(Tests))
+#The first day of tests information provided is 2020-02-21 thus I substract the rows with NAs
+tests<-tests[24:nrow(tests),]
+#test<-select(tests,Date,changeFromPrevious,Tests)
+tests
+```
+
+## Made dataframe with number of cases groupped by each date
+
+I substract all the dates before 2020-03-05 as the previous information seems to be unreliable - the total number of confirmed cases fluctuates between [1:3] (that might be affected by Diamond Princess cases that were not actually in Russia) and becomes 1 again on 2020-03-05.
+```{r}
+cases_by_date<-cases%>%group_by(Date)%>%summarise(sum(Confirmed),sum(Deaths),sum(Recovered),sum(Day.Confirmed))
+#nrow(cases_by_date)
+#cases_by_date<-dplyr::bind_rows(cases_by_date, test)
+#tail(cases_by_date)
+ts_confirmed=ts(cases_by_date$`sum(Confirmed)`)
+#ts.plot(ts_confirmed)
+#axis(1, cases_by_date$Date, format(cases_by_date$Date), cex.axis = .7)
+#nrow(cases_by_date)
+cases_by_date$Date<-as.POSIXct(cases_by_date$Date)
+cases_by_date$`sum(Day.Confirmed)`<-as.numeric(cases_by_date$`sum(Day.Confirmed)`)
+cases_by_date$`sum(Confirmed)`<-as.numeric(cases_by_date$`sum(Confirmed)`)
+cases_by_date$`sum(Deaths)`<-as.numeric(cases_by_date$`sum(Deaths)`)
+tests$Tests<-as.numeric(tests$Tests)
+tests$Date<-as.POSIXct(tests$Date)
+tests$changeFromPrevious<-as.numeric(tests$changeFromPrevious)
+```
+```{r}
+cases_by_date<-cases_by_date[5:nrow(cases_by_date),]
+```
+## Timeseries plot for Cumulative number of confirmed cases
+```{r}
+data_cols=c("sum(Confirmed)")
+titles=c("sum(Confirmed)"="Cumulative number of confirmed cases")
+ylabels=c("sum(Confirmed)"="Confirmed cases")
+
+plot_grob <- plot_timeline(cases_by_date,data_cols = data_cols,titles=titles,ylabels=ylabels)
+```
+
+
+
+## Timeseries plot for Cumulative number of deaths
+```{r}
+data_cols=c("sum(Deaths)")
+titles=c("sum(Deaths)"="Cumulative number of deaths")
+ylabels=c("sum(Deaths)"="Deaths")
+plot_grob <- plot_timeline(cases_by_date,data_cols = data_cols,titles=titles,ylabels=ylabels)
+```
+
+## Timeseries plot for Cumulative number of tests
+```{r}
+data_cols=c("Tests")
+titles=c("Tests"="Cumulative number of tests")
+ylabels=c("Tests"="Tests")
+plot_grob <- plot_timeline(tests,data_cols = data_cols,titles=titles,ylabels=ylabels)
+```
+
+
+## Histogram of daily confirmed cases
+```{r}
+ggplot(cases,aes(Date,Day.Confirmed))+geom_bar(stat="identity")+theme(axis.text.x = element_text(size = 10,hjust = 0,angle = -70)) +ggtitle("Daily confirmed cases")+xlab("Date")+ylab("Confirmed cases")
+```
+
+## Histogram of daily tests
+```{r}
+ggplot(tests,aes(Date,changeFromPrevious))+geom_bar(stat="identity")+theme(axis.text.x = element_text(size = 10,hjust = 0,angle = -70))+ggtitle("Daily number of tests")+xlab("Date")+ylab("Tests completed")
+```
+
+
+## Auto ARIMA for cases groupped by date
+```{r}
+
+prediction_time<-30#Prediction period (days)
+
+auto.arima(cases_by_date$`sum(Confirmed)`)
+auto<-arima(cases_by_date$`sum(Confirmed)`, order=c(1,2,0))
+
+prediction<-forecast(auto,h=prediction_time)
+dates<-c(as.Date(cases_by_date$Date),as.Date(seq(as.Date(cases_by_date$Date[nrow(cases_by_date)]),by="day",length.out = prediction_time+1)))
+#dates<-as.POSIXct(dates)
+prediction
+
+plot(prediction,xaxt='n',main=("Forecast of total number of cases"))
+at  <-  seq(1,nrow(cases_by_date)+prediction_time,length.out=12)
+axis(1, at = at+5, labels = dates[at],cex.axis = .7,las=3)  
+```
+
+## Auto ARIMA for deaths groupped by date
+```{r}
+
+prediction_time<-30#Prediction period (days)
+
+auto.arima(cases_by_date$`sum(Deaths)`)
+auto<-arima(cases_by_date$`sum(Deaths)`, order=c(1,2,3))
+
+prediction<-forecast(auto,h=prediction_time)
+dates<-c(as.Date(cases_by_date$Date),as.Date(seq(as.Date(cases_by_date$Date[nrow(cases_by_date)]),by="day",length.out = prediction_time+1)))
+#dates<-as.POSIXct(dates)
+
+plot(prediction,xaxt='n',main=("Forecast of total number of deaths"))
+at  <-  seq(1,nrow(cases_by_date)+prediction_time,length.out=12)
+axis(1, at = at+5, labels = dates[at],cex.axis = .7,las=3)  
+```
+
+## Auto ARIMA for cases by date
+```{r}
+
+prediction_time<-30#Prediction period (days)
+
+auto.arima(cases_by_date$`sum(Day.Confirmed)`)
+auto<-arima(cases_by_date$`sum(Day.Confirmed)`, order=c(0,2,3))
+
+prediction<-forecast(auto,h=prediction_time)
+dates<-c(as.Date(cases_by_date$Date),as.Date(seq(as.Date(cases_by_date$Date[nrow(cases_by_date)]),by="day",length.out = prediction_time+1)))
+#dates<-as.POSIXct(dates)
+prediction
+
+plot(prediction,xaxt='n',main=("Forecast for daily confirmed cases"))
+at  <-  seq(1,nrow(cases_by_date)+prediction_time,length.out=12)
+axis(1, at = at+5, labels = dates[at],cex.axis = .7,las=3)  
+```
+
+## Normalization of number of cases by number of tests
+```{r}
+cases_by_date$Date<-as.factor(cases_by_date$Date)
+for_merge<-select(tests,Date,Tests)
+for_merge$Date<-as.factor(for_merge$Date)
+normalized<-merge(x = cases_by_date, y = for_merge, by = "Date", all.x = TRUE)
+normalized$normalization<-ifelse(is.na(normalized$Tests),normalized$`sum(Confirmed)`,normalized$`sum(Confirmed)`/normalized$Tests)
+#normalized<-select(normalized,Date,normalization)
+normalized$Date<-as.POSIXct(normalized$Date)
+normalized<-normalized[1:nrow(normalized)-1,]
+```
+## Timeseries plot for Cumulative number of cases normalized by cumulative number of tests
+```{r,eval=T}
+data_cols=c("normalization")
+titles=c("normalization"="Cumulative number of cases normalized by cumulative number of tests")
+ylabels=c("normalization"="normalization")
+plot_grob <- plot_timeline(normalized,data_cols,titles=titles,ylabels=ylabels)
+```
+## Auto ARIMA for cases by date
+```{r}
+
+prediction_time<-30#Prediction period (days)
+
+auto.arima(normalized$normalization)
+auto<-arima(normalized$normalization, order=c(0,2,1))
+
+prediction<-forecast(auto,h=prediction_time)
+dates<-c(as.Date(cases_by_date$Date),as.Date(seq(as.Date(cases_by_date$Date[nrow(cases_by_date)]),by="day",length.out = prediction_time+1)))
+#dates<-as.POSIXct(dates)
+
+plot(prediction,xaxt='n',main=("Forecast for Cumulative number of cases normalized by cumulative number of tests"))
+at  <-  seq(1,nrow(cases_by_date)+prediction_time,length.out=12)
+axis(1, at = at+5, labels = dates[at],cex.axis = .7,las=3)  
+```
+## Normalization of number of cases by number of tests
+```{r}
+cases_by_date$Date<-as.factor(cases_by_date$Date)
+for_merge<-select(tests,Date,Tests,changeFromPrevious)
+for_merge$Date<-as.factor(for_merge$Date)
+normalized<-merge(x = cases_by_date, y = for_merge, by = "Date", all.x = TRUE)
+normalized$normalization<-ifelse(is.na(normalized$Tests),normalized$`sum(Confirmed)`,normalized$`sum(Confirmed)`/normalized$Tests)
+normalized<-select(normalized,Date,normalization)
+normalized$Date<-as.POSIXct(normalized$Date)
+normalized<-normalized[1:nrow(normalized)-1,]
+normalized
+```
+## Timeseries plot for Cumulative number of cases normalized by cumulative number of tests
+```{r,eval=T}
+data_cols=c("normalization")
+titles=c("normalization"="Cumulative number of cases normalized by cumulative number of tests")
+ylabels=c("normalization"="normalization")
+plot_grob <- plot_timeline(normalized,data_cols=data_cols,titles=titles,ylabels=ylabels)
+```
+
+## Auto ARIMA for cases by date
+```{r}
+
+prediction_time<-30#Prediction period (days)
+
+auto.arima(normalized$normalization)
+auto<-arima(normalized$normalization, order=c(0,2,1))
+
+prediction<-forecast(auto,h=prediction_time)
+dates<-c(as.Date(cases_by_date$Date),as.Date(seq(as.Date(cases_by_date$Date[nrow(cases_by_date)]),by="day",length.out = prediction_time+1)))
+#dates<-as.POSIXct(dates)
+
+plot(prediction,xaxt='n',main=("Forecast for Cumulative number of cases normalized by cumulative number of tests"))
+at  <-  seq(1,nrow(cases_by_date)+prediction_time,length.out=12)
+axis(1, at = at+5, labels = dates[at],cex.axis = .7,las=3)  
+```
+
+## Normalization of Number of daily cases by daily number of tests
+```{r}
+#cases_by_date
+cases_by_date$Date<-as.factor(cases_by_date$Date)
+for_merge<-select(tests,Date,Tests,changeFromPrevious)
+for_merge$Date<-as.factor(for_merge$Date)
+#for_merge
+normalized<-merge(x = cases_by_date, y = for_merge, by = "Date", all.x = TRUE)
+#normalized$normalization<-normalized$`sum(Day.Confirmed)`/normalized$changeFromPrevious
+normalized$normalization<-ifelse(normalized$changeFromPrevious==0,NA,normalized$`sum(Day.Confirmed)`/normalized$changeFromPrevious)
+#normalized$normalization<-ifelse(is.na(normalized$changeFromPrevious),NA,normalized$`sum(Day.Confirmed)`/normalized$changeFromPrevious)
+normalized<-select(normalized,Date,normalization)
+normalized$Date<-as.POSIXct(normalized$Date)
+normalized<-normalized[1:nrow(normalized)-1,]
+normalized<-normalized %>% drop_na()
+#normalized
+```
+## Timeseries plot for number of daily cases by number of daily number of tests
+```{r,eval=T}
+data_cols=c("normalization")
+titles=c("normalization"="Number of daily cases by daily number of tests")
+ylabels=c("normalization"="normalization")
+plot_grob <- plot_timeline(normalized,data_cols,titles=titles,ylabels=ylabels)
+```
+
+## Auto ARIMA for cases by date
+```{r}
+
+prediction_time<-30#Prediction period (days)
+
+auto.arima(normalized$normalization)
+auto<-arima(normalized$normalization, order=c(0,1,1))
+
+prediction<-forecast(auto,h=prediction_time)
+dates<-c(as.Date(cases_by_date$Date),as.Date(seq(as.Date(cases_by_date$Date[nrow(cases_by_date)]),by="day",length.out = prediction_time+1)))
+#dates<-as.POSIXct(dates)
+
+plot(prediction,xaxt='n',main=("Forecast for Number of daily cases by daily number of tests"))
+at  <-  seq(1,nrow(cases_by_date)+prediction_time,length.out=12)
+axis(1, at = at+5, labels = dates[at],cex.axis = .7,las=3)  
+```
+
+# Not needed part:
+
+```{r}
+seque<-NULL
+seque$Date<-(seq(as.Date(cases_by_date$Date[nrow(cases_by_date)]),by="day",length.out = prediction_time+1))
+seque<-as.data.frame(seque)
+seque<-seque$Date[2:nrow(seque)]
+for_out<-NULL
+for_out$Date<-as.factor(seque)
+for_out$point<-as.numeric(prediction$mean)
+for_out$Lo80<-prediction$lower[,1]
+for_out$Lo90<-prediction$lower[,2]
+for_out$Hi80<-prediction$upper[,1]
+for_out$Hi90<-prediction$upper[,2]
+
+for_out<-as.data.frame(for_out)
+#for_out
+
+for_join<-select(for_out,Date,Lo80,Lo90,Hi80,Hi90)
+#for_join
+
+full<-NULL
+full$Date<-(cases_by_date$Date)
+full$point<-cases_by_date$`sum(Confirmed)`
+full<-as.data.frame(full)
+full<-rbind(full,for_out[c(1,2)])
+full<-merge(x = full, y = for_join, by = "Date", all.x = TRUE)
+full$Date<-as.POSIXct(full$Date)
+
+plot(prediction,xaxt='n')
+at  <-  seq(1,nrow(cases_by_date)+prediction_time,length.out=10)
+axis(1, at = at+5, labels = full$Date[at],cex.axis = .7,las=3)  
+```
+
+```{r}
+c(as.Date(cases_by_date$Date),as.Date(seq(as.Date(cases_by_date$Date[nrow(cases_by_date)]),by="day",length.out = prediction_time+1)))
+
+typeof(full$Date)
+```
+
+
+
+```{r,eval=F}
+seque<-NULL
+seque$Date<-(seq(as.Date(cases_by_date$Date[nrow(cases_by_date)]),by="day",length.out = 21))
+seque<-as.data.frame(seque)
+seque<-seque$Date[2:nrow(seque)]
+for_out<-NULL
+for_out$Date<-as.factor(seque)
+for_out$point<-as.numeric(prediction$mean)
+for_out$Lo80<-prediction$lower[,1]
+for_out$Lo90<-prediction$lower[,2]
+for_out$Hi80<-prediction$upper[,1]
+for_out$Hi90<-prediction$upper[,2]
+
+for_out<-as.data.frame(for_out)
+for_out
+
+for_join<-select(for_out,Date,Lo80,Lo90,Hi80,Hi90)
+for_join
+```
+
+```{r,eval=FALSE}
+full<-NULL
+full$Date<-(cases_by_date$Date)
+full$point<-cases_by_date$`sum(Confirmed)`
+full<-as.data.frame(full)
+full<-rbind(full,for_out[c(1,2)])
+full<-merge(x = full, y = for_join, by = "Date", all.x = TRUE)
+full$Date<-as.POSIXct(full$Date)
+full
+data_cols=c("point")
+#overlapping_plot_names <- list("point"=c("point","Lo80","Hi80"))
+plot_grob <- plot_timeline(full,data_cols=data_cols)
+```
+
+```{r,eval=FALSE}
+data_cols=c("changeFromPrevious")
+plot_grob <- plot_timeline(tests,data_cols = data_cols)
+```
+
+https://cran.rstudio.com/web/packages/timelineR/vignettes/plot_timeline.html
+
+
+
+```{r,eval=F}
+data_cols=c("sum(Day.Confirmed)")
+titles=c("sum(Day.Confirmed)"="Daily number of confirmed cases")
+ylabels=c("sum(Day.Confirmed)"="Confirmed cases")
+
+plot_grob <- plot_timeline(cases_by_date,data_cols = data_cols,titles=titles,ylabels=ylabels)
+```
+```{r,eval=FALSE}
+data_cols=c("sum(Day.Confirmed)")
+titles=c("sum(Day.Confirmed)"="Number of confirmed cases")
+ylabels=c("sum(Day.Confirmed)"="Confirmed")
+ylimits=list("sum(Day.Confirmed)"=c(0,150))
+plot_grob <- plot_timeline(cases_by_date,data_cols = data_cols,titles=titles,ylabels=ylabels,ylimits = ylimits)
+```
+
+```{r,eval=FALSE}
+prediction$fitted
+prediction$upper
+inds <- seq(as.Date(cases_by_date$Date[1]), as.Date(cases_by_date$Date[nrow(cases_by_date)]), by = "day")
+plot(prediction, xaxt = "n")    # no x-axis 
+Axis(inds, side = 1,
+     at = seq(inds[1], tail(inds, 1) + 60, by = "3 months"),
+     format = "%b %Y",cex.axis = .7)
+#data_cols=c("Point Forecast")
+#plot_grob <- plot_timeline(prediction,data_cols = data_cols)
+#plot(cases[c(1,4)])
+#1, cases_by_date$Date, format(cases_by_date$Date), cex.axis = .7
+#ts.plot(cases$Day.Confirmed,prediction$pred, log = "y", lty = c(1,3))
+```
+
+
+
+```{r,eval=FALSE}
+library(forecast)
+require(tseries); require(astsa)
+#plot(cases$Confirmed~cases$Date)
+auto.arima(cases$Day.Confirmed)
+auto<-arima(cases$Day.Confirmed, order=c(5,1,0))
+prediction<-predict(auto,n.ahead=60)
+prediction<-forecast(auto,h=60)
+head(prediction)
+plot(prediction)
+data_cols=c("Point Forecast")
+#plot_grob <- plot_timeline(prediction,data_cols = data_cols)
+#plot(cases[c(1,4)])
+
+#ts.plot(cases$Day.Confirmed,prediction$pred, log = "y", lty = c(1,3))
+```
+```{r,eval=FALSE}
+auto.arima(cases$Confirmed)
+auto<-arima(cases$Confirmed, order=c(5,1,0))
+prediction<-predict(auto,n.ahead=60)
+#prediction<-forecast(auto,h=60)
+head(prediction)
+plot(prediction)
+data_cols=c("Point Forecast")
+#plot_grob <- plot_timeline(prediction,data_cols = data_cols)
+#plot(cases[c(1,4)])
+
+#ts.plot(cases$Day.Confirmed,prediction$pred, log = "y", lty = c(1,3))
+```
+https://www.analyticsvidhya.com/blog/2016/02/time-series-forecasting-codes-python/ 
+
+
+

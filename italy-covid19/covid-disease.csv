@@ -1,0 +1,16 @@
+,Disease,Men,Women,Total
+0,Ischemic heart disease,64,238,302
+1,Atrial Fibrillation,84,165,249
+2,Heart Failure,78,108,186
+3,Stroke,37,90,127
+4,Hypertension,251,543,794
+5,Type 2-Diabetes,102,245,347
+6,Dementia,66,107,173
+7,COPD,44,158,202
+8,Active cancer in the past 5 years,54,134,188
+9,Chronic liver disease,10,35,45
+10,Chronic renal failure,66,193,259
+11,0 comorbidities,4,27,31
+12,1 comorbidity,86,157,243
+13,2 comorbidities,79,184,263
+14,3 comorbidities and over,164,401,565

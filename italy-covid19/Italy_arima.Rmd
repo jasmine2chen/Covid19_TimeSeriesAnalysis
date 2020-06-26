@@ -1,0 +1,126 @@
+---
+title: "Italy_Covid-19"
+author: "ChrisDonoff"
+date: "16/04/2020"
+output: html_document
+---
+
+### Import the data
+
+```{r}
+library(dplyr)
+italy_import <- read.csv("covid-nationality.csv", header = TRUE)
+```
+
+
+```{r}
+italy_import %>% mutate_if(is.factor, as.character) -> italy_import
+italy_import$date <- substr(italy_import$date,1,nchar(italy_import$date)-9)
+italy_import %>% mutate_if(is.character, as.factor) -> italy_import
+head(italy_import)
+```
+
+### Analysis without taking testing into account:
+
+```{r}
+library(astsa)
+
+italy_ts <- italy_import[c(2,10)]
+
+italy_ts %>% mutate(date = as.POSIXct(date)) %>% filter(date < as.POSIXct("2020-02-24"))
+italy_ts$date = as.POSIXct(italy_ts$date)
+```
+
+Visualizing the data:
+
+```{r}
+require(timelineR)
+
+plot_grob <- plot_timeline(italy_ts)
+
+```
+
+Now check if time series is stationary (real data often is not):
+
+```{r}
+acf2(italy_ts$new_confirmed_cases)
+```
+
+These results indeed confirm that there are autocorrelations and this data is non-stationary, which is as expected.
+
+We now transform this data to stationary, so we can detect potential factors that regression lines would otherwise miss:
+
+```{r}
+plot(diff(italy_ts$new_confirmed_cases))
+```
+
+```{r}
+acf2(diff(italy_ts$new_confirmed_cases))
+```
+
+
+We now fit a time series model using the arima function which takes in 3 parameters (p,d,q), which correspond to the Auto-Regressive order, degree of differencing, and Moving-Average order.
+
+```{r}
+library(forecast)
+
+nobs <- length(italy_ts$new_confirmed_cases)
+italy_ar <- arima(diff(italy_ts$new_confirmed_cases), order = c(7,1,0))
+italy_pred <- predict(italy_ar, n.ahead=20)
+start <- 2667
+
+next_20_diff <- italy_pred$pred
+
+next_20 <- data.frame()
+
+for (i in seq(1:20)){
+  start <- start + next_20_diff[i]
+  next_20[i,1] <- start
+}
+
+```
+
+```{r}
+new_dates <- c()
+s_date <- 15
+for (i in seq(15)){
+  new_dates[i] <- paste('2020-04-', as.character(s_date + 1), sep = "")
+  s_date <- s_date + 1
+}
+new_dates[16] <- '2020-05-01'
+new_dates[17] <- '2020-05-02'
+new_dates[18] <- '2020-05-03'
+new_dates[19] <- '2020-05-04'
+new_dates[20] <- '2020-05-05'
+
+predicted <- data.frame(new_dates, next_20)
+names(predicted) <- c('date', 'new_confirmed_cases')
+
+italy_predicted <- rbind(italy_ts, predicted)
+```
+
+```{r}
+plot_grob <- plot_timeline(italy_predicted)
+```
+
+The number of new confrimed cases per day will return back to reasonable numbers in 20 days (May 5th). 
+
+
+### Analysis taking testing into account:
+
+To account for sampling bias, we will control for the number of tests performed by creatig a scaled measure of new cases. This is done by dividing the no. of new confirmed cases by the no. of swabs made. This ratio will more accurately depict the severity of spread in Covid-19, assuming the tests are sufficiently sensitive. 
+
+
+
+```{r}
+italy_scaled <- italy_ts
+italy_scaled$new_confirmed_cases <- italy_ts$new_confirmed_cases/c(4324,diff(unlist(italy_import[14])))
+
+
+plot_grob <- plot_timeline(italy_scaled)
+```
+
+Interestingly, when we account for the number of tests performed, the proportion of new cases scaled by number of tests done has already returned to a rather reasonable level, indicating that the lockdown response was effective. 
+
+
+

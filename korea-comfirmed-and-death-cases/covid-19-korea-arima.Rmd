@@ -1,0 +1,161 @@
+---
+title: "DATA583_Proj"
+author: "Jasmine Chen"
+date: '2020-04-12'
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+```{r message=FALSE}
+library(dplyr)
+library(ggplot2)
+library(forecast)
+library(tseries)
+library(timelineR)
+library(dplyr)
+```
+
+```{r}
+confirmed_global <- read.csv(url("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv"))
+dd=subset(confirmed_global, Country.Region=='Korea, South')
+write.csv(dd,"korea_covid19_confirmed.csv", row.names = FALSE)
+```
+
+```{r}
+df=subset(confirmed_global, Country.Region=='Korea, South', select=-c(Province.State, Lat, Long)) 
+confirmed=as.data.frame(colSums(df[,-1]))
+names(confirmed)[1] <- 'cumConfirmed'
+```
+
+```{r}
+confirmed <- cbind(Date = rownames(confirmed), confirmed)
+rownames(confirmed) <- 1:nrow(confirmed)
+confirmed$Date=substring(confirmed$Date,2)
+confirmed$Date <- as.Date(confirmed$Date, "%m.%d.%y")
+confirmed$dailyConfirmed=c(1,diff(confirmed$cumConfirmed))
+```
+
+```{r}
+death_global <- read.csv(url("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_global.csv"))
+dd2=subset(death_global, Country.Region=='Korea, South')
+write.csv(dd2,"korea_covid19_death.csv", row.names = FALSE)
+```
+
+```{r}
+df1=subset(death_global, Country.Region=='Korea, South', select=-c(Province.State, Lat, Long)) 
+death=as.data.frame(colSums(df1[,-1]))
+names(death)[1] <- 'cumDeath'
+```
+
+```{r}
+death <- cbind(Date = rownames(death), death)
+rownames(death) <- 1:nrow(death)
+death$Date=substring(death$Date,2)
+death$Date <- as.Date(death$Date, "%m.%d.%y")
+death$dailyDeath=c(0,diff(death$cumDeath))
+```
+
+```{r}
+test <- read.csv('full-list-cumulative-total-tests-per-thousand.csv')
+df2=subset(test, Entity=='South Korea',select=-c(Entity, Code))
+```
+
+```{r}
+df2$Total.tests=round(df2$Total.tests.per.thousand/1000*51269000,0)
+df2$dailyTests=c(0,diff(df2$Total.tests))
+df2$Date <- as.Date(df2$Date , "%b %d,%Y")
+```
+
+```{r}
+korea=inner_join(inner_join(confirmed, death,by = "Date"),df2, by = "Date")
+```
+
+
+# ARIMA daily confirmed
+```{r}
+fit_confirmed <- auto.arima(korea$dailyConfirmed, seasonal = FALSE)
+fit_confirmed
+```
+
+```{r}
+predictionTime=30
+preds <- forecast(fit_confirmed, h=predictionTime)
+dates<-c(as.Date(korea$Date),as.Date(seq(as.Date(korea$Date[nrow(korea)]),by="day",length.out = predictionTime+1)))
+plot(preds,xaxt='n',main=("Forecast of daily confirmed cases"))
+at  <-  seq(1,nrow(korea)+predictionTime,length.out=12)
+axis(1, at = at+5, labels = dates[at],cex.axis = .7,las=3) 
+```
+
+```{r}
+checkresiduals(fit_confirmed)
+```
+
+```{r}
+# Evaluating predictive performance using the last 5 points 
+(pred5=forecast(auto.arima(korea$dailyConfirmed[1:77], seasonal = FALSE),h=5))
+accuracy(korea$dailyConfirmed[78:82], pred5$mean)
+```
+Evaluating predictive performance:
+Compute the accuracy measures of the last 5 points against forecast, 'Point Forecast' has the lowest ME, RMSE, MAPE, ACF1 and Theil's U.
+
+# ARIMA daily confirmed/ daily tests
+```{r}
+fit_confirmed_n <- auto.arima(korea$dailyConfirmed/korea$dailyTests[5:82], seasonal = FALSE)
+fit_confirmed_n
+```
+
+```{r}
+predictionTime=30
+preds_n <- forecast(fit_confirmed_n, h=predictionTime)
+dates<-c(as.Date(korea$Date[5:82]),as.Date(seq(as.Date(korea$Date[nrow(korea)]),by="day",length.out = predictionTime+1)))
+plot(preds_n,xaxt='n',main=("Forecast of normalized daily confirmed cases"))
+at  <-  seq(1,nrow(korea[5:82,])+predictionTime,length.out=12)
+axis(1, at = at+5, labels = dates[at],cex.axis = .7,las=3) 
+```
+
+```{r}
+checkresiduals(fit_confirmed_n)
+```
+
+```{r}
+# Evaluating predictive performance using the last 5 points 
+(pred5d=forecast(auto.arima(korea$dailyConfirmed[5:77]/korea$dailyTests[5:77], seasonal = FALSE),h=5))
+accuracy(korea$dailyConfirmed[78:82]/korea$dailyTests[78:82], pred5d$mean)
+```
+
+
+
+
+
+
+
+
+
+# 
+# ARIMA daily death 
+```{r eval=FALSE}
+fit_death <- auto.arima(korea$dailyDeath, seasonal = FALSE)
+
+preds_d <- forecast(fit_death, h=30)
+plot(preds_d)
+
+# Evaluating predictive performance using the last 5 points 
+(pred5d=forecast(auto.arima(korea$dailyDeath[1:77], seasonal = FALSE),h=5))
+accuracy(korea$dailyDeath[78:82], pred5d$mean)
+```
+
+# ARIMA daily death/ daily tests
+```{r eval=FALSE}
+fit_death_n <- auto.arima(korea$dailyDeath/korea$dailyTests, seasonal = FALSE)
+fit_death_n
+
+preds_dn <- forecast(fit_death_n, h=30)
+plot(preds_dn)
+
+# Evaluating predictive performance using the last 5 points 
+(pred5dn=forecast(auto.arima(korea$dailyDeath[1:77]/korea$dailyTests[1:77], seasonal = FALSE),h=5))
+accuracy(korea$dailyDeath/korea$dailyTests[78:82], pred5dn$mean)
+```
+
+
