@@ -2,6 +2,8 @@
 
 Advanced Predictive Modelling DATA583 Final Project
 
+### Tools: R for data wrangling and time series analysis
+
 Dataset links:
 
 Italy: https://www.kaggle.com/virosky/italy-covid19#covid-nationality.csv
